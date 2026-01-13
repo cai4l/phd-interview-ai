@@ -1,16 +1,6 @@
 import { supabase } from "../lib/supabase";
-import type { NextApiRequest, NextApiResponse } from "next";
 
-type Data = {
-  result?: string;
-  remaining?: number;
-  error?: string;
-};
-
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<Data>
-) {
+export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).end("Method Not Allowed");
   }
@@ -61,9 +51,7 @@ export default async function handler(
       }),
     });
 
-    const data: { choices?: { message?: { content?: string } }[] } =
-      (await response.json()) as any;
-
+    const data: any = await response.json();
     result = data.choices?.[0]?.message?.content ?? result;
   } catch (err) {
     console.error("DeepSeek API 调用失败", err);
