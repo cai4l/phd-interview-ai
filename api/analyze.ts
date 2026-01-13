@@ -42,8 +42,8 @@ export default async function handler(req, res) {
     }),
   });
 
-  const dsData = await dsRes.json();
-  const result = dsData.choices?.[0]?.message?.content ?? "分析失败";
+  const data = await response.json() as { choices?: { message?: { content?: string } }[] };
+  const result = data.choices?.[0]?.message?.content ?? "DeepSeek 返回格式异常";
 
   await supabase
     .from("users_quota")
