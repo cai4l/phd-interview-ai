@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>博士面试个性化模拟系统</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: "Microsoft YaHei", sans-serif;
+    background: #f5f6f8;
+}
+
+/* 顶部标题 */
+header {
+    background: #2b5dab;
+    color: white;
+    padding: 18px;
+    text-align: center;
+    font-size: 26px;
+    font-weight: bold;
+}
+
+/* 主体左右布局 */
+.main {
+    display: grid;
+    grid-template-columns: 3fr 1.3fr;
+    gap: 20px;
+    padding: 20px;
+}
+
+/* 左右区域 */
+.left, .right {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+/* 卡片 */
+.card {
+    background: white;
+    border: 2px solid #aaa;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+/* 当前题目 */
+.question {
+    font-size: 18px;
+    padding: 14px;
+    background: #edf2fa;
+}
+
+/* 作答 / 分析区 */
+.row-box {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 10px;
+    min-height: 160px;
+}
+
+.btn-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.box {
+    border: 2px solid #bbb;
+    border-radius: 6px;
+    padding: 10px;
+    background: #fafafa;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    overflow-y: auto;
+}
+
+textarea {
+    width: 100%;
+    height: 120px;
+}
+
+button {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #999;
+    background: #eee;
+    cursor: pointer;
+}
+
+button.primary {
+    background: #2b5dab;
+    color: white;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.history-item {
+    padding: 6px;
+    border-bottom: 1px solid #ccc;
+    cursor: pointer;
+}
+
+.history-item.active {
+    background: #dbe7ff;
+}
+
+/* 支付弹窗 */
+#payModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+}
+#payBox {
+    background: #fff;
+    width: 300px;
+    margin: 120px auto;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+}
+</style>
+</head>
+
+<body>
+
+<header>博 士 面 试 个 性 化 模 拟 系 统</header>
+
+<div class="main">
+
+<!-- 左侧 -->
+<div class="left">
+
+    <!-- 当前题目 -->
+    <div class="card question" id="currentQuestion">
+        请在右侧抽题
+    </div>
+
+    <!-- 作答区 -->
+    <div class="card">
+        <h3 style="text-align:center">作答区</h3>
+        <div class="row-box">
+            <div class="btn-col">
+                <button id="startBtn">录音</button>
+                <button id="stopBtn" disabled>停止</button>
+                <button onclick="clearAnswer()">清空</button>
+            </div>
+            <div class="box" id="transcript"></div>
+        </div>
+    </div>
+
+    <!-- AI 分析区 -->
+    <div class="card">
+        <h3 id="aiHeader" style="text-align:center">AI 分析作答结果区</h3>
+        <div class="row-box">
+            <div class="btn-col">
+                <button class="primary" onclick="analyzeAnswer()">分析</button>
+                <button onclick="continueAsk()">继续提问</button>
+                <button onclick="saveSession()">保存</button>
+            </div>
+            <div class="box" id="aiResult">尚未分析</div>
+        </div>
+    </div>
+
+</div>
+
+<!-- 右侧 -->
+<div class="right">
+
+    <!-- 题目库 -->
+    <div class="card">
+        <h3 style="text-align:center">题目库</h3>
+        <textarea id="questionInput"></textarea>
+        <button class="primary" style="width:100%;margin-top:10px" onclick="pickQuestion()">
+            随机抽取1题
+        </button>
+    </div>
+
+    <!-- 历史记录 -->
+    <div class="card">
+        <h3 style="text-align:center">历史训练记录</h3>
+        <div id="historyList" class="box" style="height:160px"></div>
+        <div style="display:flex;gap:10px;margin-top:10px">
+            <button style="flex:1" onclick="viewHistory()">查看</button>
+            <button style="flex:1" onclick="downloadHistory()">下载</button>
+        </div>
+    </div>
+
+</div>
+
+</div>
+
+<!-- 支付弹窗 -->
+<div id="payModal">
+    <div id="payBox">
+        <p>AI 深度分析（¥X / 次）</p>
+        <img src="your_qr_code.png" width="180">
+        <br><br>
+        <button class="primary" onclick="confirmPaid()">我已支付</button>
+        <button onclick="closePay()">取消</button>
+    </div>
+</div>
+
+
+<script>
+// ================== 状态 ==================
+let hasPaid = false;
+let finalTranscript = "";
+let selectedHistoryId = null;
+let remainingTimes = 0; // 剩余分析次数
+
+let currentSession = {
+    title: "",
+    rounds: [],
+    aiAnalysis: ""
+};
+
+let historyRecords = [];
+
+// ================== 初始化剩余次数 ==================
+async function initRemaining() {
+    try {
+        const res = await fetch("http://localhost:3000/api/remaining");
+        const data = await res.json();
+        remainingTimes = data.remaining ?? 0;
+        updateRemaining();
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// 页面加载完成后调用
+window.addEventListener("DOMContentLoaded", () => {
+    initRemaining();
+});
+
+// ================== 抽题 ==================
+function pickQuestion() {
+    const qs = questionInput.value.split("\n").map(q => q.trim()).filter(Boolean);
+    if (!qs.length) return alert("请先输入题目库");
+    const q = qs[Math.floor(Math.random() * qs.length)];
+    currentSession = { title: q, rounds: [], aiAnalysis: "" };
+    currentQuestion.innerText = "【题目】\n" + q;
+    clearAnswer();
+    aiResult.innerText = "尚未分析";
+}
+
+// ================== 语音识别 ==================
+let recognition;
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = "zh-CN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = e => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalTranscript += t + " ";
+            else interim += t;
+        }
+        transcript.innerText = finalTranscript + interim;
+    };
+}
+
+startBtn.onclick = () => {
+    recognition.start();
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+};
+stopBtn.onclick = () => {
+    recognition.stop();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+};
+
+function clearAnswer() {
+    finalTranscript = "";
+    transcript.innerText = "";
+}
+
+// ================== 保存一轮 ==================
+function saveRound(clearAfterSave = false) {
+    if (!finalTranscript.trim()) return;
+    currentSession.rounds.push({
+        question: currentQuestion.innerText,
+        answer: finalTranscript
+    });
+    if (clearAfterSave) clearAnswer();
+}
+
+// ================== 更新剩余次数显示 ==================
+function updateRemaining() {
+    const remDiv = document.getElementById("remainingTimes");
+    if (remDiv) {
+        remDiv.innerText = `(剩余分析次数：${remainingTimes})`;
+    }
+}
+
+// ================== AI 分析 ==================
+async function analyzeAnswer() {
+    if (!hasPaid) {
+        payModal.style.display = "block";
+        return;
+    }
+
+    if (!currentSession.title) return alert("请先抽题");
+    if (!finalTranscript.trim() && currentSession.rounds.length === 0) return alert("当前没有回答内容");
+
+    saveRound(false); // 保存当前轮，但不清空作答区
+
+    aiResult.innerText = "AI 正在分析，请稍候…";
+
+    const merged = currentSession.rounds.map((r, i) =>
+`第${i + 1}轮
+题目：${r.question}
+回答：${r.answer}`).join("\n\n");
+
+    const prompt = `
+你是一名教育学博士复试考官。
+
+请综合以下面试问答进行分析：
+${merged}
+
+请从博士复试视角分析：
+1. 是否正面回应问题
+2. 学术与方法意识
+3. 风险点或空泛之处
+4. 面试官最可能追问
+5. 3条可操作的改进建议
+
+要求：不使用安慰性语言，用条列方式输出。
+`;
+
+    try {
+        const res = await fetch("http://localhost:3000/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt })
+        });
+
+        const data = await res.json();
+
+        if (data.error) return alert("分析失败：" + data.error);
+
+        currentSession.aiAnalysis = data.result;
+        aiResult.innerText = currentSession.aiAnalysis;
+
+        if (data.remaining !== undefined) {
+            remainingTimes = data.remaining;
+            updateRemaining();
+        }
+
+    } catch (err) {
+        console.error(err);
+        aiResult.innerText = "分析失败，请重试";
+    }
+}
+
+// ================== 继续提问 ==================
+async function continueAsk() {
+    if (!finalTranscript.trim()) return alert("当前没有回答内容");
+
+    saveRound(true); // 保存当前轮并清空作答区，为追问作答
+
+    const prompt = `基于以下博士面试回答，提出一个进一步追问：\n${currentSession.rounds.map(r => r.answer).join("\n\n")}`;
+
+    try {
+        const res = await fetch("http://localhost:3000/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt })
+        });
+
+        const data = await res.json();
+
+        if (data.error) return alert("生成追问失败：" + data.error);
+
+        currentQuestion.innerText = "【追问】\n" + data.result;
+
+        if (data.remaining !== undefined) {
+            remainingTimes = data.remaining;
+            updateRemaining();
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert("生成追问失败，请重试");
+    }
+}
+
+// ================== 保存 Session ==================
+function saveSession() {
+    if (!currentSession.aiAnalysis) return alert("请先完成分析");
+    historyRecords.push({
+        id: Date.now(),
+        ...JSON.parse(JSON.stringify(currentSession))
+    });
+    renderHistory();
+}
+
+// ================== 历史记录 ==================
+function renderHistory() {
+    historyList.innerHTML = "";
+    historyRecords.forEach(r => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        div.innerText = r.title;
+        div.onclick = () => {
+            document.querySelectorAll(".history-item").forEach(i => i.classList.remove("active"));
+            div.classList.add("active");
+            selectedHistoryId = r.id;
+        };
+        historyList.appendChild(div);
+    });
+}
+
+function viewHistory() {
+    const r = historyRecords.find(h => h.id === selectedHistoryId);
+    if (!r) return alert("请选择记录");
+    alert(
+`题目：${r.title}
+
+${r.rounds.map((x, i) => `第${i + 1}轮\n${x.question}\n${x.answer}`).join("\n\n")}
+
+【AI 分析】 
+${r.aiAnalysis}`
+    );
+}
+
+function downloadHistory() {
+    const r = historyRecords.find(h => h.id === selectedHistoryId);
+    if (!r) return alert("请选择记录");
+    const text =
+`题目：${r.title}
+
+${r.rounds.map((x, i) => `第${i + 1}轮\n${x.question}\n${x.answer}`).join("\n\n")}
+
+【AI 分析】 
+${r.aiAnalysis}`;
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = r.title + ".txt";
+    a.click();
+}
+
+// ================== 支付 ==================
+async function confirmPaid() {
+    try {
+        // 发 POST 请求到后台支付接口
+        const res = await fetch("http://localhost:3000/api/pay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}) // 空对象即可
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            // 支付成功，更新状态
+            hasPaid = true;
+            remainingTimes = data.remaining ?? 0;
+            updateRemaining();
+
+            // 提示用户
+            alert(`支付成功！剩余分析次数：${remainingTimes}`);
+
+            // 关闭支付弹窗
+            closePay();
+        } else {
+            // 后台返回失败
+            alert("支付确认失败，请稍后重试");
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert("支付请求失败，请检查后台是否启动或网络连接");
+    }
+}
+
+// 关闭支付弹窗
+function closePay() {
+    const payModal = document.getElementById("payModal");
+    if (payModal) payModal.style.display = "none";
+}
+
+// ================== 页面初始化显示剩余次数 ==================
+const aiCardHeader = document.getElementById("aiHeader");
+const remDiv = document.createElement("span");
+remDiv.id = "remainingTimes";
+remDiv.style.fontWeight = "bold";
+remDiv.style.marginRight = "8px";
+remDiv.innerText = "(剩余分析次数：0)";
+aiCardHeader.prepend(remDiv);
+
+</script>
+
+
+</body>
+</html>
